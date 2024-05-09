@@ -1,4 +1,4 @@
-# CF KV Workers
+# CF KV Workers 🚀
 
 Just another custom URL store made with CloudFlare Workers and KV.
 
@@ -6,6 +6,7 @@ Just another custom URL store made with CloudFlare Workers and KV.
 
 - KV for Slug and Link storage
 - D1 for View count tracking
+- Workers for Deployment
 
 ## How to use?
 
@@ -98,4 +99,4 @@ pnpm start
 pnpm run deploy
 ```
 
-Happy Hacking !!
+Happy Hacking 🎉 !!
