@@ -6,6 +6,7 @@ const corsHeaders = {
 
 export interface Env {
     URLSTORE: KVNamespace,
+    URLSTOREDB: D1Database
 }
 
 interface URLSTORE_RESPONSE {
@@ -97,6 +98,33 @@ export default {
         if(!link) {
             return new Response("Hmmmmmmm...", {status: 404})
         } else {
+            const { results } = await env.URLSTOREDB.prepare(
+                "SELECT * FROM views WHERE linkid = ?"
+                )
+                .bind(key)
+                .all() as any;
+
+            if(results.length) {
+                await env.URLSTOREDB.prepare(
+                    "UPDATE views SET count = count + 1 WHERE linkid = ?"
+                    )
+                    .bind(key)
+                    .run();
+
+                await env.URLSTOREDB.prepare(
+                    "UPDATE views SET updated_at = ? WHERE linkid = ?"
+                    )
+                    .bind(new Date().toISOString(), key)
+                    .run();
+            }
+            else {
+                await env.URLSTOREDB.prepare(
+                    "INSERT INTO views (linkid, count, updated_at) VALUES (?, ?, ?)"
+                    )
+                    .bind(key, 1, new Date().toISOString())
+                    .run();
+            }
+            
             return Response.redirect(this.withHttps(link));
         }
     },
