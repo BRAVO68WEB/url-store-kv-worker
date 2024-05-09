@@ -1,7 +1,14 @@
 name = "custom-url-store"
 main = "src/index.ts"
 compatibility_date = "2022-10-31"
-kv_namespaces = [
-  { binding = "URLSTORE", preview_id = "fa060cce2eb24ef69f81d1988c6d6e67", id = "4209bb022c21498d99a0489a241f5f0d" }
-]
 workers_dev = true
+
+kv_namespaces = [
+  { binding = "URLSTORE", preview_id = "4209bb022c21498d99a0489a241f5f0d", id = "4209bb022c21498d99a0489a241f5f0d" }
+]
+
+[[ d1_databases ]]
+binding = "URLSTOREDB" # i.e. available in your Worker on env.DB
+database_name = "URLSTORE"
+database_id = "436ac8c0-3f46-45da-9c74-ba640ac91c75"
+preview_database_id = "436ac8c0-3f46-45da-9c74-ba640ac91c75"
