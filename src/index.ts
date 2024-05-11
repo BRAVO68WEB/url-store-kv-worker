@@ -1,10 +1,10 @@
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-    'Access-Control-Max-Age': '86400',
-};
+import { Hono, Context } from 'hono';
+import { cors } from 'hono/cors';
+import { showRoutes } from 'hono/dev'
+import { poweredBy } from 'hono/powered-by'
+import { prettyJSON } from 'hono/pretty-json';
 
-export interface Env {
+type Env = {
     URLSTORE: KVNamespace,
     URLSTOREDB: D1Database
 }
@@ -12,7 +12,6 @@ export interface Env {
 interface URLSTORE_RESPONSE {
     code: string,
     url: string,
-    urlstore: string,
 }
 
 const fixedLinks: any = {
@@ -29,117 +28,197 @@ const fixedKeys : any = {
     'help': 'https://github.com/BRAVO68WEB/url-store-kv-worker'
 }
 
-export default {
-    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-        const {headers, url, method} = request;
-        const parsedURL = new URL(url);
-        const {pathname} = parsedURL;
-        const key = pathname.replace("/", "")
+const generateCode = (length: number) => {
+    let result = '';
+    let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let charactersLength = characters.length;
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
 
-        switch (method) {
-            case "POST":
-                return this.handlePOST(request, env, parsedURL)
-            case "GET":
-                return this.handleGET(request, env, key)
-        }
+const withHttps = (url: string) : string => {
+    return !/^https?:\/\//i.test(url) ? `https://${url}` : url
+}
 
-        return new Response("Hello World!");
-    },
+const app = new Hono<{
+    Bindings: Env
+}>();
 
-    async handlePOST(request: Request, env: Env, parsedURL: URL): Promise<Response> {
-        const body: any = await request.json();
-        const {protocol, hostname} = parsedURL
-        let unique = false;
-        let code = "";
-		if(body.hasOwnProperty("auth")) {
-			const { auth } = body
-			const authKey = await env.URLSTORE.get("auth")
-			if(auth !== authKey) {
-				return new Response("Invalid auth", {status: 401})
-			}
-		}
-		else {
-			return new Response("Invalid auth", {status: 401})
-		}
-        if (body.hasOwnProperty('url')) {
-            const {url} = body;
-            while (!unique) {
-                code = this.generateCode(7);
-                const check = await env.URLSTORE.get(code);
-                unique = !check;
-            }
-            const urlstore = `${protocol}//${hostname}/${code}`;
-            await env.URLSTORE.put(code, url)
-            const rData: URLSTORE_RESPONSE = {code, urlstore, url}
+app.use(cors());
+app.use(poweredBy());
+app.use(prettyJSON())
 
-            return new Response(JSON.stringify(rData), {headers: corsHeaders});
-        }
-        return new Response(null, {status: 400})
-    },
+app.get('/', async (c: Context) => {
+    return c.json({
+        message: "Welcome to URL Store",
+        github: "https://github.com/BRAVO68WEB/url-store-kv-worker/"
+    })
+})
 
-    async handleGET(request: Request, env: Env, key: string): Promise<Response> {
-        let link: string | null = "";
+app.get('/health', async (c: Context) => {
+    return c.text("OK")
+})
 
-        const authKey = await env.URLSTORE.get("auth")
+app.get('/list/keys', async (c: Context) => {
+    const auth = c.req.header('X-Auth-Key')
+    const authKey = await c.env.URLSTORE.get("auth")
 
-        if(key in fixedKeys) {
-            return new Response(fixedKeys[key])
-        }
-        else if(key == authKey){
-			return new Response("Can you not !?", {status: 400})
-        }
-        else if(key in fixedLinks) {
-            return Response.redirect(this.withHttps(fixedLinks[key]), 301);
-        }
-        else if(key) {
-            link = await env.URLSTORE.get(key)
-        }
+    if(auth !== authKey) {
+        return new Response("Invalid auth", {status: 401})
+    }
 
-        if(!link) {
-            return new Response("Hmmmmmmm...", {status: 404})
-        } else {
-            const { results } = await env.URLSTOREDB.prepare(
-                "SELECT * FROM views WHERE linkid = ?"
+    const keys = await c.env.URLSTORE.list()
+    return c.json(keys)
+})
+
+app.get('/:key', async (c: Context) => {
+    let link: string | null = "";
+    const key = c.req.param('key');
+
+    const authKey = await c.env.URLSTORE.get("auth")
+
+    if(key in fixedKeys) {
+        return c.text(fixedKeys[key])
+    }
+    else if(key == authKey){
+        return c.text("Can you not !?", 400)
+    }
+    else if(key in fixedLinks) {
+        return c.redirect(fixedLinks[key], 301)
+    }
+    else if(key) {
+        link = await c.env.URLSTORE.get(key)
+    }
+
+    if(!link) {
+        return c.text("Hmmmmmmm...", 404)
+    } else {
+        const { results } = await c.env.URLSTOREDB.prepare(
+            "SELECT * FROM views WHERE linkid = ?"
+            )
+            .bind(key)
+            .all() as any;
+
+        if(results.length) {
+            await c.env.URLSTOREDB.prepare(
+                "UPDATE views SET count = count + 1 WHERE linkid = ?"
                 )
                 .bind(key)
-                .all() as any;
+                .run();
 
-            if(results.length) {
-                await env.URLSTOREDB.prepare(
-                    "UPDATE views SET count = count + 1 WHERE linkid = ?"
-                    )
-                    .bind(key)
-                    .run();
-
-                await env.URLSTOREDB.prepare(
-                    "UPDATE views SET updated_at = ? WHERE linkid = ?"
-                    )
-                    .bind(new Date().toISOString(), key)
-                    .run();
-            }
-            else {
-                await env.URLSTOREDB.prepare(
-                    "INSERT INTO views (linkid, count, updated_at) VALUES (?, ?, ?)"
-                    )
-                    .bind(key, 1, new Date().toISOString())
-                    .run();
-            }
-            
-            return Response.redirect(this.withHttps(link));
+            await c.env.URLSTOREDB.prepare(
+                "UPDATE views SET updated_at = ? WHERE linkid = ?"
+                )
+                .bind(new Date().toISOString(), key)
+                .run();
         }
-    },
-
-    generateCode(length: number) {
-        let result = '';
-        let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let charactersLength = characters.length;
-        for (let i = 0; i < length; i++) {
-            result += characters.charAt(Math.floor(Math.random() * charactersLength));
+        else {
+            await c.env.URLSTOREDB.prepare(
+                "INSERT INTO views (linkid, count, updated_at) VALUES (?, ?, ?)"
+                )
+                .bind(key, 1, new Date().toISOString())
+                .run();
         }
-        return result;
-    },
+        
+        return c.redirect(withHttps(link), 301)
+    }
+})
 
-    withHttps(url: string) : string{
-        return !/^https?:\/\//i.test(url) ? `https://${url}` : url
-    },
-};
+app.delete('/:key', async (c: Context) => {
+    const auth = c.req.header('X-Auth-Key')
+    const authKey = await c.env.URLSTORE.get("auth")
+
+    if(auth !== authKey) {
+        return new Response("Invalid auth", {status: 401})
+    }
+
+    const qkey = c.req.param('key')
+
+    await c.env.URLSTORE.delete(
+        qkey
+    )
+
+    return c.json({
+        message: "Deleted"
+    })
+})
+
+app.get('/view/:key', async (c: Context) => {
+    const auth = c.req.header('X-Auth-Key')
+    const authKey = await c.env.URLSTORE.get("auth")
+    const qkey = c.req.param('key')
+
+    if(auth !== authKey) {
+        return new Response("Invalid auth", {status: 401})
+    }
+
+    const { results } = await c.env.URLSTOREDB.prepare(
+        "SELECT * FROM views WHERE linkid = ?"
+        )
+        .bind(qkey)
+        .all() as any;
+
+    const value = await c.env.URLSTORE.get(
+        qkey
+    )
+
+    if(!value) {
+        return c.json({
+            error: "Invalid key"
+        }, 400);
+    }
+
+    return c.json({
+        results,
+        value
+    })
+})
+
+app.post('/create', async (c: Context) => {
+    const body = await c.req.json();
+    let unique = false;
+    let code = "";
+    const auth = c.req.header('X-Auth-Key')
+    if(auth) {
+        const authKey = await c.env.URLSTORE.get("auth")
+        if(auth !== authKey) {
+            return c.json({
+                error: "Invalid auth"
+            }, 401)
+        }
+    }
+    else {
+        return c.json({
+            error: "Invalid auth"
+        }, 401)
+    }
+    if (body.url) {
+        const {url, key} = body;
+        while (!unique) {
+            code = generateCode(7);
+            const check = await c.env.URLSTORE.get(code);
+            unique = !check;
+        }
+        if(key){
+            code = key
+        }
+
+        await c.env.URLSTORE.put(code, url)
+        const rData: URLSTORE_RESPONSE = {
+            code, 
+            url
+        }
+
+        return c.json(rData)
+    }
+
+    return c.json({
+        error: "Invalid request"
+    }, 400)
+})
+
+showRoutes(app)
+
+export default app
