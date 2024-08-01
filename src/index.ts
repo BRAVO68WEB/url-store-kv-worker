@@ -84,6 +84,24 @@ app.get('/list/keys', async (c: Context) => {
     return c.json(keys)
 })
 
+app.get('/check/:key', async (c: Context) => {
+    const qkey = c.req.param('key')
+
+    const value = await c.env.URLSTORE.get(
+        qkey
+    )
+
+    if(!value) {
+        return c.json({
+            error: "Invalid key"
+        }, 200);
+    }
+
+    return c.json({
+        result: "OK"
+    })
+})
+
 app.get('/:key', async (c: Context) => {
     let link: string | null = "";
     const key = c.req.param('key');
