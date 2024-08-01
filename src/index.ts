@@ -18,14 +18,12 @@ const fixedLinks: any = {
     'favicon.ico': 'https://www.cloudflare.com/favicon.ico',
     'robots.txt': 'https://www.cloudflare.com/robots.txt',
     'auth': 'https://github.com/',
-    'github': 'https://github.com/BRAVO68WEB/url-store-kv-worker',
     'bravo68web': 'https://itsmebravo.dev'
 }
 
 const fixedKeys : any = {
     'auth': "Don't be too smart",
     'health': 'OK',
-    'help': 'https://github.com/BRAVO68WEB/url-store-kv-worker'
 }
 
 const generateCode = (length: number) => {
@@ -55,6 +53,19 @@ app.get('/', async (c: Context) => {
         message: "Welcome to URL Store",
         github: "https://github.com/BRAVO68WEB/url-store-kv-worker/"
     })
+})
+
+app.get('/stats', async (c: Context) => {
+    const total_keys = await c.env.URLSTORE.list();
+    const total_views = await c.env.URLSTOREDB.prepare(
+        "SELECT SUM(count) as total FROM views"
+        )
+        .all() as any;
+
+    return c.json({
+        total_keys: total_keys.keys.length,
+        total_views: total_views.results[0].total
+    });
 })
 
 app.get('/health', async (c: Context) => {

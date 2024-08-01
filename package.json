@@ -22,5 +22,6 @@
   },
   "dependencies": {
     "hono": "^4.3.4"
-  }
+  },
+  "packageManager": "pnpm@9.6.0"
 }
